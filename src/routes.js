@@ -8,7 +8,7 @@ const { BASE_URL, MAX_PAGES, PROJECTS_PER_PAGE } = require('./consts');
 
 exports.handleStart = async ({ request, session }, query, requestQueue, proxyConfig, maxResults) => {
     // on this phase - getting TOKEN AND COOKIES
-    const { seed, cookies } = await getToken(request.url, session, proxyConfig);
+    const { cookies } = await getToken(request.url, session, proxyConfig);
 
     const page = 1;
     const totalProjects = 0;
@@ -18,8 +18,7 @@ exports.handleStart = async ({ request, session }, query, requestQueue, proxyCon
 
     const params = querystring.stringify({
         ...query,
-        page,
-        seed,
+        page
     });
     const listUrl = `${BASE_URL}${params}`;
 
@@ -72,9 +71,6 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
         throw new Error('The page didn\'t load as expected, Will retry...');
     }
 
-    // GETTING NEW SEED (TOKEN) FROM JSON
-    const { seed } = body;
-
     // SAVING NEEDED NUMBER OF ITEMS
     if (projectsToSave.length > 0) {
         const newProjects = projectsToSave.filter((c) => !savedProjectIds.includes(c.id));
@@ -94,9 +90,8 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
     const hasMoreResults = body.has_more;
     if (hasMoreResults && savedProjects < totalProjects) {
         page++;
-        // UPDATING IN THE CURRENT LINK PAGE NUMBER AND SEED AND ADDING IT TO THE QUEUE
-        const nextPage = request.url.replace(request.url.match(/page=([0-9.]+)/)[0], `page=${page}`)
-            .replace(request.url.match(/seed=([0-9.]+)/)[0], `seed=${seed}`);
+        // UPDATING IN THE CURRENT LINK PAGE NUMBER AND ADDING IT TO THE QUEUE
+        const nextPage = request.url.replace(request.url.match(/page=([0-9.]+)/)[0], `page=${page}`);
         // ADDING TO THE QUEUE
         await requestQueue.addRequest({
             url: nextPage,
