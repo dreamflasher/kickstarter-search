@@ -166,6 +166,7 @@ async function getToken(url, session, proxyConfiguration) {
     });
 
     const $ = cheerio.load(html.body);
+    const cookies = (html.headers['set-cookie'] || []).map((s) => s.split(';', 2)[0]).join('; ');
     
     return {
         cookies,
