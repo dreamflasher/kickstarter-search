@@ -1,11 +1,9 @@
-const Apify = require('apify');
+const { Actor } = require('apify');
+const { log } = require('crawlee');
 const moment = require('moment');
-const cheerio = require('cheerio');
 
 const { EMPTY_SELECT, LOCATION_SEARCH_ACTOR_ID, DEFAULT_SORT_ORDER, DATE_FORMAT, AGG_FIELDS } = require('./consts');
 const { statuses, states, categories, goals, sorts } = require('./filters');
-
-const { utils: { log, requestAsBrowser } } = Apify;
 
 // 1. FUNCTION TO REMOVE NO NEED KEYS FROM THE ITEM OBJECT
 function cleanProject(project) {
@@ -26,10 +24,7 @@ function cleanProject(project) {
         featureImage: project.profile?.feature_image_attributes?.image_urls?.default ?? null,
         title: project.name,
         description: project.blurb,
-        link: project.urls?.web?.project ?? null,
-        pubDate: moment.unix(project.launched_at).format(DATE_FORMAT),
-        created_at_formatted: moment.unix(project.created_at).format(DATE_FORMAT),
-        launched_at_formatted: moment.unix(project.launched_at).format(DATE_FORMAT),
+        link: project.urls?.web?.project ?? null
     };
 
     delete cleanedProject.creator;
@@ -37,6 +32,9 @@ function cleanProject(project) {
     delete cleanedProject.category;
     delete cleanedProject.urls;
     delete cleanedProject.profile;
+    // user-interaction flags - always null since we scrape unauthenticated
+    delete cleanedProject.is_liked;
+    delete cleanedProject.is_disliked;
 
     return cleanedProject;
 }
@@ -45,7 +43,7 @@ function cleanProject(project) {
 async function processLocation(location) {
     log.info(`Quering kickstarter for location ID of "${location}"...`);
     // CALLING SEPARATE ACTOR TO GET ID OF THE LOCATION
-    const run = await Apify.call(LOCATION_SEARCH_ACTOR_ID, { query: location });
+    const run = await Actor.call(LOCATION_SEARCH_ACTOR_ID, { query: location });
     if (run.status !== 'SUCCEEDED') {
         log.warning(`Actor ${LOCATION_SEARCH_ACTOR_ID} did not finish correctly. Please check your "location" field in the input, and try again.`);
         return;
@@ -165,35 +163,24 @@ function stringifyQuery(params) {
 }
 
 // 4. FIRST REQUEST => GETTING TOKEN AND COOKIES. THERE ARE A LOT OF BLOCKS WITHOUT IT.
-async function getToken(url, session, proxyConfiguration) {
-    const proxyUrl = proxyConfiguration.newUrl(session.id);
-    // Query the url and load csrf token from it
-    const html = await requestAsBrowser({
-        url,
-        proxyUrl,
-    });
-
-    const { statusCode, isCloudflare, bodySnippet } = describeResponse(html);
-    if (statusCode !== 200 || isCloudflare) {
-        log.warning(`getToken: Unexpected response for ${url} (status ${statusCode}${isCloudflare ? ', looks like a Cloudflare challenge/block' : ''}). Body snippet: ${bodySnippet}`);
-        // this session's proxy IP looks burned - force a fresh session/IP on the next request
-        session.retire();
-    }
-
-    const $ = cheerio.load(html.body);
+async function getToken(sendRequest) {
+    // sendRequest reuses the context's own bound URL, session and proxy
+    const html = await sendRequest({});
     const cookies = (html.headers['set-cookie'] || []).map((s) => s.split(';', 2)[0]).join('; ');
 
     return {
         cookies,
+        ...describeResponse(html),
     };
 }
 
 // 4b. DIAGNOSTIC HELPER: SUMMARIZE A RESPONSE FOR LOGGING (STATUS CODE, BODY SNIPPET, CLOUDFLARE GUESS)
 function describeResponse({ statusCode, headers, body } = {}) {
     const bodyText = typeof body === 'string' ? body : JSON.stringify(body ?? '');
-    const isCloudflare = headers?.server === 'cloudflare'
-        || Boolean(headers?.['cf-mitigated'])
-        || Boolean(headers?.['cf-ray'])
+    // cf-ray/server:cloudflare are present on EVERY Kickstarter response (Cloudflare fronts the
+    // whole site as a CDN) so they can't be used as block signals. cf-mitigated is only set when
+    // Cloudflare actually intervened (challenge/block), and the body text only appears on interstitials.
+    const isCloudflare = Boolean(headers?.['cf-mitigated'])
         || /just a moment|attention required|checking your browser/i.test(bodyText);
 
     return {
@@ -222,14 +209,14 @@ function notifyAboutMaxResults(foundProjects, limit) {
 const proxyConfiguration = async ({
     proxyConfig,
     required = true,
-    force = Apify.isAtHome(),
+    force = Actor.isAtHome(),
     blacklist = ['GOOGLESERP'],
     hint = [],
 }) => {
-    const configuration = await Apify.createProxyConfiguration(proxyConfig);
+    const configuration = await Actor.createProxyConfiguration(proxyConfig);
 
     // this works for custom proxyUrls
-    if (Apify.isAtHome() && required) {
+    if (Actor.isAtHome() && required) {
         if (!configuration || (!configuration.usesApifyProxy && (!configuration.proxyUrls || !configuration.proxyUrls.length)) || !configuration.newUrl()) {
             throw new Error('\n=======\nYou must use Apify proxy or custom proxy URLs\n\n=======');
         }
@@ -245,7 +232,7 @@ const proxyConfiguration = async ({
 
             // specific non-automatic proxy groups like RESIDENTIAL, not an error, just a hint
             if (hint.length && !hint.some((group) => (configuration.groups || []).includes(group))) {
-                Apify.utils.log.info(`\n=======\nYou can pick specific proxy groups for better experience:\n\n*  ${hint.join('\n*  ')}\n\n=======`);
+                log.info(`\n=======\nYou can pick specific proxy groups for better experience:\n\n*  ${hint.join('\n*  ')}\n\n=======`);
             }
         }
     }

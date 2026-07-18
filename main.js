@@ -1,14 +1,13 @@
-const Apify = require('apify');
+const { Actor } = require('apify');
+const { BasicCrawler, log } = require('crawlee');
 
 const { parseInput, proxyConfiguration, stringifyQuery } = require('./src/utils');
 const { BASE_URL, PROJECTS_PER_PAGE } = require('./src/consts');
 const { handleStart, handlePagination } = require('./src/routes');
 
-const { log } = Apify.utils;
-
-Apify.main(async () => {
-    const requestQueue = await Apify.openRequestQueue();
-    const input = await Apify.getInput();
+Actor.main(async () => {
+    const requestQueue = await Actor.openRequestQueue();
+    const input = await Actor.getInput();
     // GETTING PARAMS FROM THE INPUT
     const queryParameters = await parseInput(input);
     let { maxResults } = input;
@@ -32,23 +31,24 @@ Apify.main(async () => {
         },
     });
     // CRAWLER
-    const crawler = new Apify.BasicCrawler({
+    const crawler = new BasicCrawler({
         requestQueue,
+        ...(proxy ? { proxyConfiguration: proxy } : {}),
         maxConcurrency: 1,
         useSessionPool: true,
         maxRequestRetries: 1000,
-        handleRequestFunction: async (context) => {
-            const { url, userData: { label } } = context.request;
+        requestHandler: async (context) => {
+            const { request: { url, userData: { label } } } = context;
             log.info('Page opened.', { label, url });
             // eslint-disable-next-line default-case
             switch (label) {
                 case 'START':
-                    return handleStart(context, queryParameters, requestQueue, proxy, maxResults);
+                    return handleStart(context, queryParameters, requestQueue, maxResults);
                 case 'PAGINATION-LIST':
-                    return handlePagination(context, requestQueue, proxy);
+                    return handlePagination(context, requestQueue);
             }
         },
-        handleFailedRequestFunction: async ({
+        failedRequestHandler: async ({
             request,
             error,
         }) => {

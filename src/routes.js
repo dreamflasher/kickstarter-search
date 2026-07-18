@@ -1,15 +1,19 @@
-const Apify = require('apify');
-
-const { utils: { log, requestAsBrowser, sleep } } = Apify;
+const { Actor } = require('apify');
+const { log, sleep } = require('crawlee');
 
 const { cleanProject, getToken, notifyAboutMaxResults, stringifyQuery, describeResponse } = require('./utils');
 const {
     BASE_URL, MAX_PAGES, PROJECTS_PER_PAGE, MAX_INCOMPLETE_PAGES_STREAK, MIN_REQUEST_DELAY_MS, MAX_REQUEST_DELAY_MS,
 } = require('./consts');
 
-exports.handleStart = async ({ request, session }, query, requestQueue, proxyConfig, maxResults) => {
+exports.handleStart = async ({ request, session, sendRequest }, query, requestQueue, maxResults) => {
     // on this phase - getting TOKEN AND COOKIES
-    const { cookies } = await getToken(request.url, session, proxyConfig);
+    const { cookies, statusCode, isCloudflare, bodySnippet } = await getToken(sendRequest);
+    if (statusCode !== 200 || isCloudflare) {
+        log.warning(`getToken: Unexpected response for ${request.url} (status ${statusCode}${isCloudflare ? ', looks like a Cloudflare challenge/block' : ''}). Body snippet: ${bodySnippet}`);
+        // this session's proxy IP looks burned - force a fresh session/IP on the next request
+        session.retire();
+    }
 
     const page = 1;
     const totalProjects = 0;
@@ -43,7 +47,7 @@ exports.handleStart = async ({ request, session }, query, requestQueue, proxyCon
     });
 };
 
-exports.handlePagination = async ({ request, session }, requestQueue, proxyConfiguration) => {
+exports.handlePagination = async ({ request, session, sendRequest }, requestQueue) => {
     let { page, totalProjects, savedProjects, incompletePagesStreak } = request.userData;
     const { cookies, maximumResults, savedProjectIds } = request.userData;
 
@@ -51,9 +55,7 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
     await sleep(MIN_REQUEST_DELAY_MS + Math.random() * (MAX_REQUEST_DELAY_MS - MIN_REQUEST_DELAY_MS));
 
     // MAKING REQUEST => JSON OBJECT IN RESPONSE
-    const response = await requestAsBrowser({
-        url: request.url,
-        proxyUrl: proxyConfiguration.newUrl(session.id),
+    const response = await sendRequest({
         headers: {
             Accept: 'application/json, text/javascript, */*; q=0.01',
             'X-Requested-With': 'XMLHttpRequest',
@@ -94,7 +96,7 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
             savedProjectIds.push(project.id);
         });
 
-        await Apify.pushData(newProjects);
+        await Actor.pushData(newProjects);
         log.info(`Page ${page}: Saved ${newProjects.length} projects.`);
         if (newProjects.length !== projectsToSave.length) {
             log.info(`Found ${projectsToSave.length - newProjects.length} duplicates in the request.`);
