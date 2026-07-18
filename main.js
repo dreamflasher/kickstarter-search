@@ -40,6 +40,11 @@ Actor.main(async () => {
         requestQueue,
         launchContext: {
             launcher: chromium,
+            launchOptions: {
+                // Docker's default /dev/shm is too small for Chromium and causes crashes.
+                // --disable-gpu isn't needed for GPU rendering in headless mode, so it's dropped here.
+                args: ['--disable-dev-shm-usage', '--disable-gpu'],
+            },
         },
         ...(proxy ? { proxyConfiguration: proxy } : {}),
         maxConcurrency: 1,
