@@ -1,9 +1,13 @@
 const { Actor } = require('apify');
-const { HttpCrawler, log } = require('crawlee');
+const { PlaywrightCrawler, log } = require('crawlee');
+const { chromium } = require('playwright-extra');
+const stealthPlugin = require('puppeteer-extra-plugin-stealth');
+
+chromium.use(stealthPlugin());
 
 const { parseInput, proxyConfiguration, stringifyQuery } = require('./src/utils');
-const { BASE_URL, PROJECTS_PER_PAGE } = require('./src/consts');
-const { handleStart, handlePagination } = require('./src/routes');
+const { BASE_URL, PROJECTS_PER_PAGE, MAX_PAGES } = require('./src/consts');
+const { handlePagination } = require('./src/routes');
 
 Actor.main(async () => {
     const requestQueue = await Actor.openRequestQueue();
@@ -15,39 +19,37 @@ Actor.main(async () => {
 
     const proxy = await proxyConfiguration({ proxyConfig });
     if (!maxResults) maxResults = 200 * PROJECTS_PER_PAGE;
+    const maximumResults = Math.min(maxResults, MAX_PAGES * PROJECTS_PER_PAGE);
     const params = stringifyQuery(queryParameters);
     const firstUrl = `${BASE_URL}${params}`;
-    // ADDING TO THE QUEUE FIRST PAGE TO GET TOKEN
+    // ADDING TO THE QUEUE FIRST PAGE
     await requestQueue.addRequest({
         url: firstUrl,
-        uniqueKey: 'START',
+        uniqueKey: 'PAGINATION-LIST-page-1',
         userData: {
             page: 1,
-            label: 'START',
-            searchResults: [],
-            itemsToSave: [],
-            savedItems: 0,
-            maxResults,
+            totalProjects: 0,
+            savedProjects: 0,
+            maximumResults,
+            savedProjectIds: [],
+            incompletePagesStreak: 0,
         },
     });
     // CRAWLER
-    const crawler = new HttpCrawler({
+    const crawler = new PlaywrightCrawler({
         requestQueue,
+        launchContext: {
+            launcher: chromium,
+        },
         ...(proxy ? { proxyConfiguration: proxy } : {}),
         maxConcurrency: 1,
         useSessionPool: true,
+        persistCookiesPerSession: true,
+        // Crawlee's built-in detection for known bot-protection pages (incl. Cloudflare) - retires
+        // the session and retries instead of us having to hand-roll block detection ourselves.
+        retryOnBlocked: true,
         maxRequestRetries: 1000,
-        requestHandler: async (context) => {
-            const { request: { url, userData: { label } } } = context;
-            log.info('Page opened.', { label, url });
-            // eslint-disable-next-line default-case
-            switch (label) {
-                case 'START':
-                    return handleStart(context, queryParameters, requestQueue, maxResults);
-                case 'PAGINATION-LIST':
-                    return handlePagination(context, requestQueue);
-            }
-        },
+        requestHandler: (context) => handlePagination(context, requestQueue),
         failedRequestHandler: async ({
             request,
             error,

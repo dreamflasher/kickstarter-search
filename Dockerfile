@@ -1,7 +1,7 @@
 # First, specify the base Docker image. You can read more about
 # the available images at https://docs.apify.com/sdk/js/docs/guides/docker-images
-# You can also use any other image from Docker Hub.
-FROM apify/actor-node:24
+# This one comes with Playwright + Chromium preinstalled, needed for PlaywrightCrawler.
+FROM apify/actor-node-playwright-chrome:24
 
 # Second, copy just package.json and package-lock.json since it should be
 # the only file that affects "npm install" in the next step, to speed up the build

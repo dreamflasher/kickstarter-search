@@ -1,8 +1,7 @@
 const { Actor } = require('apify');
 const { log } = require('crawlee');
-const moment = require('moment');
 
-const { EMPTY_SELECT, LOCATION_SEARCH_ACTOR_ID, DEFAULT_SORT_ORDER, DATE_FORMAT, AGG_FIELDS } = require('./consts');
+const { EMPTY_SELECT, LOCATION_SEARCH_ACTOR_ID, DEFAULT_SORT_ORDER, AGG_FIELDS } = require('./consts');
 const { statuses, states, categories, goals, sorts } = require('./filters');
 
 // 1. FUNCTION TO REMOVE NO NEED KEYS FROM THE ITEM OBJECT
@@ -162,34 +161,6 @@ function stringifyQuery(params) {
     return parts.join('&');
 }
 
-// 4. FIRST REQUEST => GETTING TOKEN AND COOKIES. THERE ARE A LOT OF BLOCKS WITHOUT IT.
-async function getToken(sendRequest) {
-    // sendRequest reuses the context's own bound URL, session and proxy
-    const html = await sendRequest({});
-    const cookies = (html.headers['set-cookie'] || []).map((s) => s.split(';', 2)[0]).join('; ');
-
-    return {
-        cookies,
-        ...describeResponse(html),
-    };
-}
-
-// 4b. DIAGNOSTIC HELPER: SUMMARIZE A RESPONSE FOR LOGGING (STATUS CODE, BODY SNIPPET, CLOUDFLARE GUESS)
-function describeResponse({ statusCode, headers, body } = {}) {
-    const bodyText = typeof body === 'string' ? body : JSON.stringify(body ?? '');
-    // cf-ray/server:cloudflare are present on EVERY Kickstarter response (Cloudflare fronts the
-    // whole site as a CDN) so they can't be used as block signals. cf-mitigated is only set when
-    // Cloudflare actually intervened (challenge/block), and the body text only appears on interstitials.
-    const isCloudflare = Boolean(headers?.['cf-mitigated'])
-        || /just a moment|attention required|checking your browser/i.test(bodyText);
-
-    return {
-        statusCode,
-        isCloudflare,
-        bodySnippet: bodyText.slice(0, 100),
-    };
-}
-
 // 5. FUNCTION TO INFORM ABOUT THE ITEM LIMIT
 /**
  * Kickstarter has limit of 200 pages (2400 projects) for a search
@@ -243,9 +214,7 @@ const proxyConfiguration = async ({
 module.exports = {
     cleanProject,
     parseInput,
-    getToken,
     notifyAboutMaxResults,
     proxyConfiguration,
     stringifyQuery,
-    describeResponse,
 };
