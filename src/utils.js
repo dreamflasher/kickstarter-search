@@ -173,11 +173,33 @@ async function getToken(url, session, proxyConfiguration) {
         proxyUrl,
     });
 
+    const { statusCode, isCloudflare, bodySnippet } = describeResponse(html);
+    if (statusCode !== 200 || isCloudflare) {
+        log.warning(`getToken: Unexpected response for ${url} (status ${statusCode}${isCloudflare ? ', looks like a Cloudflare challenge/block' : ''}). Body snippet: ${bodySnippet}`);
+    } else {
+        log.info(`getToken: Loaded ${url} (status ${statusCode}).`);
+    }
+
     const $ = cheerio.load(html.body);
     const cookies = (html.headers['set-cookie'] || []).map((s) => s.split(';', 2)[0]).join('; ');
-    
+
     return {
         cookies,
+    };
+}
+
+// 4b. DIAGNOSTIC HELPER: SUMMARIZE A RESPONSE FOR LOGGING (STATUS CODE, BODY SNIPPET, CLOUDFLARE GUESS)
+function describeResponse({ statusCode, headers, body } = {}) {
+    const bodyText = typeof body === 'string' ? body : JSON.stringify(body ?? '');
+    const isCloudflare = headers?.server === 'cloudflare'
+        || Boolean(headers?.['cf-mitigated'])
+        || Boolean(headers?.['cf-ray'])
+        || /just a moment|attention required|checking your browser/i.test(bodyText);
+
+    return {
+        statusCode,
+        isCloudflare,
+        bodySnippet: bodyText.slice(0, 500),
     };
 }
 
@@ -238,4 +260,5 @@ module.exports = {
     notifyAboutMaxResults,
     proxyConfiguration,
     stringifyQuery,
+    describeResponse,
 };

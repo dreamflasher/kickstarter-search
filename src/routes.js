@@ -2,7 +2,7 @@ const Apify = require('apify');
 
 const { utils: { log, requestAsBrowser } } = Apify;
 
-const { cleanProject, getToken, notifyAboutMaxResults, stringifyQuery } = require('./utils');
+const { cleanProject, getToken, notifyAboutMaxResults, stringifyQuery, describeResponse } = require('./utils');
 const { BASE_URL, MAX_PAGES, PROJECTS_PER_PAGE, MAX_INCOMPLETE_PAGES_STREAK } = require('./consts');
 
 exports.handleStart = async ({ request, session }, query, requestQueue, proxyConfig, maxResults) => {
@@ -46,7 +46,7 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
     const { cookies, maximumResults, savedProjectIds } = request.userData;
 
     // MAKING REQUEST => JSON OBJECT IN RESPONSE
-    const { body } = await requestAsBrowser({
+    const response = await requestAsBrowser({
         url: request.url,
         proxyUrl: proxyConfiguration.newUrl(session.id),
         headers: {
@@ -56,14 +56,16 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
         },
         responseType: 'json',
     });
+    const { body, statusCode } = response;
+    log.info(`Page ${page}: Response status ${statusCode}.`);
 
     // ON THE FIRST PAGE WE ARE CHECKING IF WE REACHED THE LIMIT
     if (page === 1) {
-        log.info(`Page ${page}: Found ${body.total_hits} projects in total.`);
+        log.info(`Page ${page}: Found ${body?.total_hits} projects in total.`);
         // If kickstarter contains more then 2400 results for current query, notify user
         // that he will not have all results and that he needs to refine his query.
-        if (body.total_hits > maximumResults) notifyAboutMaxResults(body.total_hits, maximumResults);
-        totalProjects = Math.min(body.total_hits, maximumResults);
+        if (body?.total_hits > maximumResults) notifyAboutMaxResults(body.total_hits, maximumResults);
+        totalProjects = Math.min(body?.total_hits, maximumResults);
     }
     // ARRAY OF THE PROJECTS FROM THE PAGE
     log.info(`Number of  saved projects: ${savedProjects}`);
@@ -72,7 +74,9 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
         projectsToSave = body.projects.slice(0, maximumResults - savedProjects)
             .map(cleanProject);
     } catch (e) {
-        throw new Error('The page didn\'t load as expected, Will retry...');
+        const { isCloudflare, bodySnippet } = describeResponse(response);
+        log.error(`Page ${page}: Unexpected response (status ${statusCode}${isCloudflare ? ', looks like a Cloudflare challenge/block' : ''}). Body snippet: ${bodySnippet}`);
+        throw new Error(`The page didn't load as expected (status ${statusCode}${isCloudflare ? ', Cloudflare block suspected' : ''}). Will retry...`);
     }
 
     // SAVING NEEDED NUMBER OF ITEMS
