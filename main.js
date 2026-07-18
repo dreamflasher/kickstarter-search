@@ -21,6 +21,7 @@ Apify.main(async () => {
     // ADDING TO THE QUEUE FIRST PAGE TO GET TOKEN
     await requestQueue.addRequest({
         url: firstUrl,
+        uniqueKey: 'START',
         userData: {
             page: 1,
             label: 'START',

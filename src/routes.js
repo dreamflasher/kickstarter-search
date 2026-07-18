@@ -23,8 +23,11 @@ exports.handleStart = async ({ request, session }, query, requestQueue, proxyCon
     const listUrl = `${BASE_URL}${params}`;
 
     // ADDING TO THE QUEUE FIRST PAGINATION PAGE WITH JSON
+    // uniqueKey is set explicitly because this URL is identical to the START request's URL
+    // (page 1 with no distinguishing params) - without it the queue would dedupe it away.
     await requestQueue.addRequest({
         url: listUrl,
+        uniqueKey: `PAGINATION-LIST-page-${page}`,
         userData: {
             cookies,
             page,
@@ -107,6 +110,7 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
         // ADDING TO THE QUEUE
         await requestQueue.addRequest({
             url: nextPage,
+            uniqueKey: `PAGINATION-LIST-page-${page}`,
             userData: {
                 label: 'PAGINATION-LIST',
                 page,
