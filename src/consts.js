@@ -10,6 +10,9 @@ const AGG_FIELDS = 'state,category_id';
 // Stop pagination once this many consecutive pages fail to return a full page of new projects
 // (guards against Kickstarter's has_more flag staying true forever near the end of the result set)
 const MAX_INCOMPLETE_PAGES_STREAK = 3;
+// Jittered delay applied before each page request, to avoid tripping rate-based blocks
+const MIN_REQUEST_DELAY_MS = 500;
+const MAX_REQUEST_DELAY_MS = 5000;
 
 module.exports = {
     EMPTY_SELECT,
@@ -21,4 +24,6 @@ module.exports = {
     DATE_FORMAT,
     AGG_FIELDS,
     MAX_INCOMPLETE_PAGES_STREAK,
+    MIN_REQUEST_DELAY_MS,
+    MAX_REQUEST_DELAY_MS,
 };

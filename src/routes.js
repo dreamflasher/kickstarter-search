@@ -1,9 +1,11 @@
 const Apify = require('apify');
 
-const { utils: { log, requestAsBrowser } } = Apify;
+const { utils: { log, requestAsBrowser, sleep } } = Apify;
 
 const { cleanProject, getToken, notifyAboutMaxResults, stringifyQuery, describeResponse } = require('./utils');
-const { BASE_URL, MAX_PAGES, PROJECTS_PER_PAGE, MAX_INCOMPLETE_PAGES_STREAK } = require('./consts');
+const {
+    BASE_URL, MAX_PAGES, PROJECTS_PER_PAGE, MAX_INCOMPLETE_PAGES_STREAK, MIN_REQUEST_DELAY_MS, MAX_REQUEST_DELAY_MS,
+} = require('./consts');
 
 exports.handleStart = async ({ request, session }, query, requestQueue, proxyConfig, maxResults) => {
     // on this phase - getting TOKEN AND COOKIES
@@ -45,6 +47,9 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
     let { page, totalProjects, savedProjects, incompletePagesStreak } = request.userData;
     const { cookies, maximumResults, savedProjectIds } = request.userData;
 
+    // JITTERED DELAY BEFORE EACH REQUEST, TO AVOID TRIPPING RATE-BASED BLOCKS
+    await sleep(MIN_REQUEST_DELAY_MS + Math.random() * (MAX_REQUEST_DELAY_MS - MIN_REQUEST_DELAY_MS));
+
     // MAKING REQUEST => JSON OBJECT IN RESPONSE
     const response = await requestAsBrowser({
         url: request.url,
@@ -76,6 +81,8 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
     } catch (e) {
         const { isCloudflare, bodySnippet } = describeResponse(response);
         log.error(`Page ${page}: Unexpected response (status ${statusCode}${isCloudflare ? ', looks like a Cloudflare challenge/block' : ''}). Body snippet: ${bodySnippet}`);
+        // this session's proxy IP produced a bad response - force a fresh session/IP on the next retry
+        session.retire();
         throw new Error(`The page didn't load as expected (status ${statusCode}${isCloudflare ? ', Cloudflare block suspected' : ''}). Will retry...`);
     }
 
