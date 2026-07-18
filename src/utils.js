@@ -176,8 +176,6 @@ async function getToken(url, session, proxyConfiguration) {
     const { statusCode, isCloudflare, bodySnippet } = describeResponse(html);
     if (statusCode !== 200 || isCloudflare) {
         log.warning(`getToken: Unexpected response for ${url} (status ${statusCode}${isCloudflare ? ', looks like a Cloudflare challenge/block' : ''}). Body snippet: ${bodySnippet}`);
-    } else {
-        log.info(`getToken: Loaded ${url} (status ${statusCode}).`);
     }
 
     const $ = cheerio.load(html.body);

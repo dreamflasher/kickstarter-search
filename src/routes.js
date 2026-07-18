@@ -57,15 +57,15 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
         responseType: 'json',
     });
     const { body, statusCode } = response;
-    log.info(`Page ${page}: Response status ${statusCode}.`);
+    if (statusCode !== 200) log.warning(`Page ${page}: Response status ${statusCode}.`);
 
     // ON THE FIRST PAGE WE ARE CHECKING IF WE REACHED THE LIMIT
-    if (page === 1) {
-        log.info(`Page ${page}: Found ${body?.total_hits} projects in total.`);
+    if (page === 1 && typeof body?.total_hits === 'number') {
+        log.info(`Page ${page}: Found ${body.total_hits} projects in total.`);
         // If kickstarter contains more then 2400 results for current query, notify user
         // that he will not have all results and that he needs to refine his query.
-        if (body?.total_hits > maximumResults) notifyAboutMaxResults(body.total_hits, maximumResults);
-        totalProjects = Math.min(body?.total_hits, maximumResults);
+        if (body.total_hits > maximumResults) notifyAboutMaxResults(body.total_hits, maximumResults);
+        totalProjects = Math.min(body.total_hits, maximumResults);
     }
     // ARRAY OF THE PROJECTS FROM THE PAGE
     log.info(`Number of  saved projects: ${savedProjects}`);
