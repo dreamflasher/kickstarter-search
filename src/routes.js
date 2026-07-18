@@ -3,7 +3,7 @@ const { log, sleep } = require('crawlee');
 
 const { cleanProject, notifyAboutMaxResults } = require('./utils');
 const {
-    MAX_INCOMPLETE_PAGES_STREAK, MIN_REQUEST_DELAY_MS, MAX_REQUEST_DELAY_MS, PROJECTS_PER_PAGE,
+    MAX_PAGES, MAX_INCOMPLETE_PAGES_STREAK, MIN_REQUEST_DELAY_MS, MAX_REQUEST_DELAY_MS, PROJECTS_PER_PAGE,
 } = require('./consts');
 
 exports.handlePagination = async ({ request, page: browserPage }, requestQueue) => {
@@ -77,6 +77,13 @@ exports.handlePagination = async ({ request, page: browserPage }, requestQueue) 
     // FLAG FROM JSON
     const hasMoreResults = body.has_more;
     if (hasMoreResults && savedProjects < totalProjects) {
+        // Kickstarter hard-caps this endpoint at MAX_PAGES pages (returns 404 beyond it), regardless
+        // of savedProjects vs totalProjects - duplicate/undercounted pages can leave savedProjects
+        // short of totalProjects even after the last real page, so this must be checked separately.
+        if (page >= MAX_PAGES) {
+            log.info(`Page ${page}: Reached Kickstarter's limit of ${MAX_PAGES} pages, stopping.`);
+            return;
+        }
         page++;
         // UPDATING IN THE CURRENT LINK PAGE NUMBER AND ADDING IT TO THE QUEUE
         const nextPage = request.url.replace(request.url.match(/page=([0-9.]+)/)[0], `page=${page}`);
