@@ -1,10 +1,9 @@
 const Apify = require('apify');
-const querystring = require('querystring');
 
 const { utils: { log, requestAsBrowser } } = Apify;
 
-const { cleanProject, getToken, notifyAboutMaxResults } = require('./utils');
-const { BASE_URL, MAX_PAGES, PROJECTS_PER_PAGE } = require('./consts');
+const { cleanProject, getToken, notifyAboutMaxResults, stringifyQuery } = require('./utils');
+const { BASE_URL, MAX_PAGES, PROJECTS_PER_PAGE, MAX_INCOMPLETE_PAGES_STREAK } = require('./consts');
 
 exports.handleStart = async ({ request, session }, query, requestQueue, proxyConfig, maxResults) => {
     // on this phase - getting TOKEN AND COOKIES
@@ -15,8 +14,9 @@ exports.handleStart = async ({ request, session }, query, requestQueue, proxyCon
     const savedProjects = 0;
     const maximumResults = Math.min(maxResults, MAX_PAGES * PROJECTS_PER_PAGE);
     const savedProjectIds = [];
+    const incompletePagesStreak = 0;
 
-    const params = querystring.stringify({
+    const params = stringifyQuery({
         ...query,
         page
     });
@@ -33,12 +33,13 @@ exports.handleStart = async ({ request, session }, query, requestQueue, proxyCon
             savedProjects,
             maximumResults,
             savedProjectIds,
+            incompletePagesStreak,
         },
     });
 };
 
 exports.handlePagination = async ({ request, session }, requestQueue, proxyConfiguration) => {
-    let { page, totalProjects, savedProjects } = request.userData;
+    let { page, totalProjects, savedProjects, incompletePagesStreak } = request.userData;
     const { cookies, maximumResults, savedProjectIds } = request.userData;
 
     // MAKING REQUEST => JSON OBJECT IN RESPONSE
@@ -72,6 +73,7 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
     }
 
     // SAVING NEEDED NUMBER OF ITEMS
+    let newProjectsCount = 0;
     if (projectsToSave.length > 0) {
         const newProjects = projectsToSave.filter((c) => !savedProjectIds.includes(c.id));
         newProjects.forEach((project) => {
@@ -85,7 +87,17 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
         }
 
         savedProjects += newProjects.length;
+        newProjectsCount = newProjects.length;
     }
+
+    // Kickstarter can keep reporting has_more=true even though it has no more new projects left to give
+    // (e.g. once near the end of the result set). Track consecutive short pages and give up after a few.
+    incompletePagesStreak = newProjectsCount >= PROJECTS_PER_PAGE ? 0 : incompletePagesStreak + 1;
+    if (incompletePagesStreak >= MAX_INCOMPLETE_PAGES_STREAK) {
+        log.info(`Page ${page}: Stopping pagination, ${incompletePagesStreak} consecutive pages without a full page of new projects.`);
+        return;
+    }
+
     // FLAG FROM JSON
     const hasMoreResults = body.has_more;
     if (hasMoreResults && savedProjects < totalProjects) {
@@ -102,6 +114,7 @@ exports.handlePagination = async ({ request, session }, requestQueue, proxyConfi
                 maximumResults,
                 totalProjects,
                 savedProjectIds,
+                incompletePagesStreak,
             },
         });
     }

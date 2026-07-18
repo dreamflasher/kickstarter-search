@@ -171,18 +171,16 @@ const categories = [
 ];
 
 const statuses = {
-    Live: 'live',
-    Successful: 'successful',
     Upcoming: 'upcoming',
+    Live: 'live',
+    'Late Pledge': 'late_pledge',
+    Canceled: 'canceled',
+    Failed: 'failed',
+    Successful: 'successful',
 };
 
-const pledges = [
-    '< $1,000 pledged',
-    '$1,000 to $10,000 pledged',
-    '$10,000 to $100,000 pledged',
-    '$100,000 to $1,000,000 pledged',
-    '> $1,000,000 pledged',
-];
+// all states Kickstarter supports; sent explicitly when no status filter is picked, to mean "All"
+const states = Object.values(statuses);
 
 const goals = [
     '< $1,000 goal',
@@ -190,12 +188,6 @@ const goals = [
     '$10,000 to $100,000 goal',
     '$100,000 to $1,000,000 goal',
     '> $1,000,000 goal',
-];
-
-const raised = [
-    '< 75% raised',
-    '75% to 100% raised',
-    '> 100% raised',
 ];
 
 const sorts = [
@@ -210,8 +202,7 @@ const sorts = [
 module.exports = {
     categories,
     statuses,
-    pledges,
+    states,
     goals,
-    raised,
     sorts,
 };

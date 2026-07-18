@@ -1,7 +1,6 @@
 const Apify = require('apify');
-const querystring = require('querystring');
 
-const { parseInput, proxyConfiguration } = require('./src/utils');
+const { parseInput, proxyConfiguration, stringifyQuery } = require('./src/utils');
 const { BASE_URL, PROJECTS_PER_PAGE } = require('./src/consts');
 const { handleStart, handlePagination } = require('./src/routes');
 
@@ -17,7 +16,7 @@ Apify.main(async () => {
 
     const proxy = await proxyConfiguration({ proxyConfig });
     if (!maxResults) maxResults = 200 * PROJECTS_PER_PAGE;
-    const params = querystring.stringify(queryParameters);
+    const params = stringifyQuery(queryParameters);
     const firstUrl = `${BASE_URL}${params}`;
     // ADDING TO THE QUEUE FIRST PAGE TO GET TOKEN
     await requestQueue.addRequest({

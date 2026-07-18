@@ -2,8 +2,8 @@ const Apify = require('apify');
 const moment = require('moment');
 const cheerio = require('cheerio');
 
-const { EMPTY_SELECT, LOCATION_SEARCH_ACTOR_ID, DEFAULT_SORT_ORDER, DATE_FORMAT } = require('./consts');
-const { statuses, categories, pledges, goals, raised, sorts } = require('./filters');
+const { EMPTY_SELECT, LOCATION_SEARCH_ACTOR_ID, DEFAULT_SORT_ORDER, DATE_FORMAT, AGG_FIELDS } = require('./consts');
+const { statuses, states, categories, goals, sorts } = require('./filters');
 
 const { utils: { log, requestAsBrowser } } = Apify;
 
@@ -11,7 +11,7 @@ const { utils: { log, requestAsBrowser } } = Apify;
 function cleanProject(project) {
     const cleanedProject = {
         ...project,
-        photo: project.photo?.project?.photo?.full ?? null,
+        photo: project.photo?.full ?? null,
         creatorId: project.creator?.id ?? null,
         creatorName: project.creator?.name ?? null,
         creatorAvatar: project.creator?.avatar?.medium ?? null,
@@ -22,6 +22,8 @@ function cleanProject(project) {
         categoryName: project.category?.name ?? null,
         categorySlug: project.category?.slug ?? null,
         url: project.urls?.web?.project ?? null,
+        rewardsUrl: project.urls?.web?.rewards ?? null,
+        featureImage: project.profile?.feature_image_attributes?.image_urls?.default ?? null,
         title: project.name,
         description: project.blurb,
         link: project.urls?.web?.project ?? null,
@@ -73,6 +75,7 @@ async function parseInput(input) {
     Object.keys(input).forEach((key) => {
         const filterValue = (typeof (input[key]) === 'string') ? input[key].trim() : input[key];
         if (!filterValue || filterValue === EMPTY_SELECT) return;
+        if (Array.isArray(filterValue) && filterValue.length === 0) return;
         filledInFilters[key] = filterValue;
     });
 
@@ -91,30 +94,26 @@ async function parseInput(input) {
             Please check the input. Actor will be stopped`);
             return;
         }
-        queryParams.category_id = foundCategories[0].id;
+        queryParams.category_id = [foundCategories[0].id];
     }
 
     // process status
     if (filledInFilters.status) {
-        const state = statuses[filledInFilters.status];
-        if (!state) {
-            log.warning(`Input parameter "status" contains invalid value: "${filledInFilters.state}".\n
+        const selectedStates = filledInFilters.status.map((status) => statuses[status]);
+        if (selectedStates.includes(undefined)) {
+            log.warning(`Input parameter "status" contains invalid value: "${filledInFilters.status}".\n
             Please check the input. Actor will be stopped.`);
             return;
         }
-        queryParams.state = state;
+        queryParams.state = selectedStates;
+    } else {
+        // Kickstarter now requires every state to be listed explicitly to mean "All"
+        queryParams.state = states;
     }
 
-    // process pledged
-    if (filledInFilters.pledged) {
-        const pledged = pledges.indexOf(filledInFilters.pledged.toLowerCase());
-        if (pledged === -1) {
-            log.warning(`Input parameter "pledged" contains invalid value: "${filledInFilters.pledged}".\n
-            Please check the input. Actor will be stopped.`);
-            return;
-        }
-        queryParams.pledged = pledged;
-    }
+    // process pledged min/max
+    if (filledInFilters.pledgedMin) queryParams.pledged_min = filledInFilters.pledgedMin;
+    if (filledInFilters.pledgedMax) queryParams.pledged_max = filledInFilters.pledgedMax;
 
     // process goal
     if (filledInFilters.goal) {
@@ -126,18 +125,11 @@ async function parseInput(input) {
         queryParams.goal = goal;
     }
 
-    // process raised
-    if (filledInFilters.raised) {
-        const amountRaised = raised.indexOf(filledInFilters.raised.toLowerCase());
-        if (amountRaised === -1) {
-            log.warning(`Input parameter "raised" contains invalid value: "${filledInFilters.raised}".\n
-            Please check the input. Actor will be finished.`);
-            return;
-        }
-        queryParams.raised = amountRaised;
-    }
+    // process raised min/max
+    if (filledInFilters.raisedMin) queryParams.raised_min = filledInFilters.raisedMin;
+    if (filledInFilters.raisedMax) queryParams.raised_max = filledInFilters.raisedMax;
 
-    // process raised
+    // process sort
     if (filledInFilters.sort) {
         const sort = sorts.indexOf(filledInFilters.sort.toLowerCase());
         if (sort === -1) {
@@ -151,9 +143,25 @@ async function parseInput(input) {
 
     if (filledInFilters.location) queryParams.woe_id = filledInFilters.location;
 
+    queryParams.agg_fields = AGG_FIELDS;
     queryParams.page = 1;
 
     return queryParams;
+}
+
+// 3b. SERIALIZE QUERY PARAMS THE WAY KICKSTARTER'S discover/advanced.json EXPECTS
+// (array values become repeated `key[]=value` pairs instead of querystring's `key=value&key=value`)
+function stringifyQuery(params) {
+    const parts = [];
+    Object.keys(params).forEach((key) => {
+        const value = params[key];
+        if (Array.isArray(value)) {
+            value.forEach((item) => parts.push(`${encodeURIComponent(key)}[]=${encodeURIComponent(item)}`));
+        } else {
+            parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+        }
+    });
+    return parts.join('&');
 }
 
 // 4. FIRST REQUEST => GETTING TOKEN AND COOKIES. THERE ARE A LOT OF BLOCKS WITHOUT IT.
@@ -229,4 +237,5 @@ module.exports = {
     getToken,
     notifyAboutMaxResults,
     proxyConfiguration,
+    stringifyQuery,
 };

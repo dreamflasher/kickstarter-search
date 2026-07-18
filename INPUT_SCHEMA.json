@@ -206,19 +206,28 @@
       },
       "status": {
           "title": "Status",
-          "type": "string",
-          "description": "Status of the project",
-          "default": "All",
-          "enum": ["All", "Live", "Successful", "Upcoming"],
+          "type": "array",
+          "description": "Status(es) of the project to include. Leave empty to include all statuses.",
+          "default": [],
+          "items": {
+              "type": "string",
+              "enum": ["Upcoming", "Live", "Late Pledge", "Canceled", "Failed", "Successful"]
+          },
           "editor": "select"
       },
-      "pledged": {
-          "title": "Amount pledged",
-          "type": "string",
-          "description": "Amount pledged",
-          "default": "All",
-          "enum": ["All", "< $1,000 pledged", "$1,000 to $10,000 pledged", "$10,000 to $100,000 pledged", "$100,000 to $1,000,000 pledged", "> $1,000,000 pledged"],
-          "editor": "select"
+      "pledgedMin": {
+          "title": "Minimum amount pledged",
+          "type": "integer",
+          "description": "Only return projects with at least this amount pledged",
+          "minimum": 0,
+          "editor": "number"
+      },
+      "pledgedMax": {
+          "title": "Maximum amount pledged",
+          "type": "integer",
+          "description": "Only return projects with at most this amount pledged",
+          "minimum": 0,
+          "editor": "number"
       },
       "goal": {
           "title": "Goal",
@@ -228,13 +237,19 @@
           "enum": ["All", "< $1,000 goal", "$1,000 to $10,000 goal", "$10,000 to $100,000 goal", "$100,000 to $1,000,000 goal", "> $1,000,000 goal"],
           "editor": "select"
       },
-      "raised": {
-          "title": "% Raised",
-          "type": "string",
-          "description": "% Raised",
-          "default": "All",
-          "enum": ["All", "< 75% raised", "75% to 100% raised", "> 100% raised"],
-          "editor": "select"
+      "raisedMin": {
+          "title": "Minimum % raised",
+          "type": "integer",
+          "description": "Only return projects that have raised at least this percentage of their goal",
+          "minimum": 0,
+          "editor": "number"
+      },
+      "raisedMax": {
+          "title": "Maximum % raised",
+          "type": "integer",
+          "description": "Only return projects that have raised at most this percentage of their goal",
+          "minimum": 0,
+          "editor": "number"
       },
       "sort": {
           "title": "Sort",
