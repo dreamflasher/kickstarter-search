@@ -186,7 +186,7 @@ function describeResponse({ statusCode, headers, body } = {}) {
     return {
         statusCode,
         isCloudflare,
-        bodySnippet: bodyText.slice(0, 500),
+        bodySnippet: bodyText.slice(0, 100),
     };
 }
 

@@ -1,5 +1,5 @@
 const { Actor } = require('apify');
-const { BasicCrawler, log } = require('crawlee');
+const { HttpCrawler, log } = require('crawlee');
 
 const { parseInput, proxyConfiguration, stringifyQuery } = require('./src/utils');
 const { BASE_URL, PROJECTS_PER_PAGE } = require('./src/consts');
@@ -31,7 +31,7 @@ Actor.main(async () => {
         },
     });
     // CRAWLER
-    const crawler = new BasicCrawler({
+    const crawler = new HttpCrawler({
         requestQueue,
         ...(proxy ? { proxyConfiguration: proxy } : {}),
         maxConcurrency: 1,
