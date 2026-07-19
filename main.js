@@ -1,15 +1,17 @@
-const Apify = require('apify');
-const querystring = require('querystring');
+const { Actor } = require('apify');
+const { PlaywrightCrawler, log } = require('crawlee');
+const { chromium } = require('playwright-extra');
+const stealthPlugin = require('puppeteer-extra-plugin-stealth');
 
-const { parseInput, proxyConfiguration } = require('./src/utils');
-const { BASE_URL, PROJECTS_PER_PAGE } = require('./src/consts');
-const { handleStart, handlePagination } = require('./src/routes');
+chromium.use(stealthPlugin());
 
-const { log } = Apify.utils;
+const { parseInput, proxyConfiguration, stringifyQuery } = require('./src/utils');
+const { BASE_URL, PROJECTS_PER_PAGE, MAX_PAGES } = require('./src/consts');
+const { handlePagination } = require('./src/routes');
 
-Apify.main(async () => {
-    const requestQueue = await Apify.openRequestQueue();
-    const input = await Apify.getInput();
+Actor.main(async () => {
+    const requestQueue = await Actor.openRequestQueue();
+    const input = await Actor.getInput();
     // GETTING PARAMS FROM THE INPUT
     const queryParameters = await parseInput(input);
     let { maxResults } = input;
@@ -17,38 +19,43 @@ Apify.main(async () => {
 
     const proxy = await proxyConfiguration({ proxyConfig });
     if (!maxResults) maxResults = 200 * PROJECTS_PER_PAGE;
-    const params = querystring.stringify(queryParameters);
+    const maximumResults = Math.min(maxResults, MAX_PAGES * PROJECTS_PER_PAGE);
+    const params = stringifyQuery(queryParameters);
     const firstUrl = `${BASE_URL}${params}`;
-    // ADDING TO THE QUEUE FIRST PAGE TO GET TOKEN
+    // ADDING TO THE QUEUE FIRST PAGE
     await requestQueue.addRequest({
         url: firstUrl,
+        uniqueKey: 'PAGINATION-LIST-page-1',
         userData: {
             page: 1,
-            label: 'START',
-            searchResults: [],
-            itemsToSave: [],
-            savedItems: 0,
-            maxResults,
+            totalProjects: 0,
+            savedProjects: 0,
+            maximumResults,
+            savedProjectIds: [],
+            incompletePagesStreak: 0,
         },
     });
     // CRAWLER
-    const crawler = new Apify.BasicCrawler({
+    const crawler = new PlaywrightCrawler({
         requestQueue,
+        launchContext: {
+            launcher: chromium,
+            launchOptions: {
+                // Docker's default /dev/shm is too small for Chromium and causes crashes.
+                // --disable-gpu isn't needed for GPU rendering in headless mode, so it's dropped here.
+                args: ['--disable-dev-shm-usage', '--disable-gpu'],
+            },
+        },
+        ...(proxy ? { proxyConfiguration: proxy } : {}),
         maxConcurrency: 1,
         useSessionPool: true,
+        persistCookiesPerSession: true,
+        // Crawlee's built-in detection for known bot-protection pages (incl. Cloudflare) - retires
+        // the session and retries instead of us having to hand-roll block detection ourselves.
+        retryOnBlocked: true,
         maxRequestRetries: 1000,
-        handleRequestFunction: async (context) => {
-            const { url, userData: { label } } = context.request;
-            log.info('Page opened.', { label, url });
-            // eslint-disable-next-line default-case
-            switch (label) {
-                case 'START':
-                    return handleStart(context, queryParameters, requestQueue, proxy, maxResults);
-                case 'PAGINATION-LIST':
-                    return handlePagination(context, requestQueue, proxy);
-            }
-        },
-        handleFailedRequestFunction: async ({
+        requestHandler: (context) => handlePagination(context, requestQueue),
+        failedRequestHandler: async ({
             request,
             error,
         }) => {

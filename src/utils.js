@@ -1,17 +1,14 @@
-const Apify = require('apify');
-const moment = require('moment');
-const cheerio = require('cheerio');
+const { Actor } = require('apify');
+const { log } = require('crawlee');
 
-const { EMPTY_SELECT, LOCATION_SEARCH_ACTOR_ID, DEFAULT_SORT_ORDER, DATE_FORMAT } = require('./consts');
-const { statuses, categories, pledges, goals, raised, sorts } = require('./filters');
-
-const { utils: { log, requestAsBrowser } } = Apify;
+const { EMPTY_SELECT, LOCATION_SEARCH_ACTOR_ID, DEFAULT_SORT_ORDER, AGG_FIELDS } = require('./consts');
+const { statuses, states, categories, goals, sorts } = require('./filters');
 
 // 1. FUNCTION TO REMOVE NO NEED KEYS FROM THE ITEM OBJECT
 function cleanProject(project) {
     const cleanedProject = {
         ...project,
-        photo: project.photo?.project?.photo?.full ?? null,
+        photo: project.photo?.full ?? null,
         creatorId: project.creator?.id ?? null,
         creatorName: project.creator?.name ?? null,
         creatorAvatar: project.creator?.avatar?.medium ?? null,
@@ -22,12 +19,11 @@ function cleanProject(project) {
         categoryName: project.category?.name ?? null,
         categorySlug: project.category?.slug ?? null,
         url: project.urls?.web?.project ?? null,
+        rewardsUrl: project.urls?.web?.rewards ?? null,
+        featureImage: project.profile?.feature_image_attributes?.image_urls?.default ?? null,
         title: project.name,
         description: project.blurb,
-        link: project.urls?.web?.project ?? null,
-        pubDate: moment.unix(project.launched_at).format(DATE_FORMAT),
-        created_at_formatted: moment.unix(project.created_at).format(DATE_FORMAT),
-        launched_at_formatted: moment.unix(project.launched_at).format(DATE_FORMAT),
+        link: project.urls?.web?.project ?? null
     };
 
     delete cleanedProject.creator;
@@ -35,6 +31,9 @@ function cleanProject(project) {
     delete cleanedProject.category;
     delete cleanedProject.urls;
     delete cleanedProject.profile;
+    // user-interaction flags - always null since we scrape unauthenticated
+    delete cleanedProject.is_liked;
+    delete cleanedProject.is_disliked;
 
     return cleanedProject;
 }
@@ -43,7 +42,7 @@ function cleanProject(project) {
 async function processLocation(location) {
     log.info(`Quering kickstarter for location ID of "${location}"...`);
     // CALLING SEPARATE ACTOR TO GET ID OF THE LOCATION
-    const run = await Apify.call(LOCATION_SEARCH_ACTOR_ID, { query: location });
+    const run = await Actor.call(LOCATION_SEARCH_ACTOR_ID, { query: location });
     if (run.status !== 'SUCCEEDED') {
         log.warning(`Actor ${LOCATION_SEARCH_ACTOR_ID} did not finish correctly. Please check your "location" field in the input, and try again.`);
         return;
@@ -73,6 +72,7 @@ async function parseInput(input) {
     Object.keys(input).forEach((key) => {
         const filterValue = (typeof (input[key]) === 'string') ? input[key].trim() : input[key];
         if (!filterValue || filterValue === EMPTY_SELECT) return;
+        if (Array.isArray(filterValue) && filterValue.length === 0) return;
         filledInFilters[key] = filterValue;
     });
 
@@ -91,30 +91,26 @@ async function parseInput(input) {
             Please check the input. Actor will be stopped`);
             return;
         }
-        queryParams.category_id = foundCategories[0].id;
+        queryParams.category_id = [foundCategories[0].id];
     }
 
     // process status
     if (filledInFilters.status) {
-        const state = statuses[filledInFilters.status];
-        if (!state) {
-            log.warning(`Input parameter "status" contains invalid value: "${filledInFilters.state}".\n
+        const selectedStates = filledInFilters.status.map((status) => statuses[status]);
+        if (selectedStates.includes(undefined)) {
+            log.warning(`Input parameter "status" contains invalid value: "${filledInFilters.status}".\n
             Please check the input. Actor will be stopped.`);
             return;
         }
-        queryParams.state = state;
+        queryParams.state = selectedStates;
+    } else {
+        // Kickstarter now requires every state to be listed explicitly to mean "All"
+        queryParams.state = states;
     }
 
-    // process pledged
-    if (filledInFilters.pledged) {
-        const pledged = pledges.indexOf(filledInFilters.pledged.toLowerCase());
-        if (pledged === -1) {
-            log.warning(`Input parameter "pledged" contains invalid value: "${filledInFilters.pledged}".\n
-            Please check the input. Actor will be stopped.`);
-            return;
-        }
-        queryParams.pledged = pledged;
-    }
+    // process pledged min/max
+    if (filledInFilters.pledgedMin) queryParams.pledged_min = filledInFilters.pledgedMin;
+    if (filledInFilters.pledgedMax) queryParams.pledged_max = filledInFilters.pledgedMax;
 
     // process goal
     if (filledInFilters.goal) {
@@ -126,18 +122,11 @@ async function parseInput(input) {
         queryParams.goal = goal;
     }
 
-    // process raised
-    if (filledInFilters.raised) {
-        const amountRaised = raised.indexOf(filledInFilters.raised.toLowerCase());
-        if (amountRaised === -1) {
-            log.warning(`Input parameter "raised" contains invalid value: "${filledInFilters.raised}".\n
-            Please check the input. Actor will be finished.`);
-            return;
-        }
-        queryParams.raised = amountRaised;
-    }
+    // process raised min/max
+    if (filledInFilters.raisedMin) queryParams.raised_min = filledInFilters.raisedMin;
+    if (filledInFilters.raisedMax) queryParams.raised_max = filledInFilters.raisedMax;
 
-    // process raised
+    // process sort
     if (filledInFilters.sort) {
         const sort = sorts.indexOf(filledInFilters.sort.toLowerCase());
         if (sort === -1) {
@@ -151,31 +140,25 @@ async function parseInput(input) {
 
     if (filledInFilters.location) queryParams.woe_id = filledInFilters.location;
 
+    queryParams.agg_fields = AGG_FIELDS;
     queryParams.page = 1;
 
     return queryParams;
 }
 
-// 4. FIRST REQUEST => GETTING TOKEN AND COOKIES. THERE ARE A LOT OF BLOCKS WITHOUT IT.
-async function getToken(url, session, proxyConfiguration) {
-    const proxyUrl = proxyConfiguration.newUrl(session.id);
-    // Query the url and load csrf token from it
-    const html = await requestAsBrowser({
-        url,
-        proxyUrl,
+// 3b. SERIALIZE QUERY PARAMS THE WAY KICKSTARTER'S discover/advanced.json EXPECTS
+// (array values become repeated `key[]=value` pairs instead of querystring's `key=value&key=value`)
+function stringifyQuery(params) {
+    const parts = [];
+    Object.keys(params).forEach((key) => {
+        const value = params[key];
+        if (Array.isArray(value)) {
+            value.forEach((item) => parts.push(`${encodeURIComponent(key)}[]=${encodeURIComponent(item)}`));
+        } else {
+            parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+        }
     });
-
-    const $ = cheerio.load(html.body);
-    const seed = $('.js-project-group[data-seed]').attr('data-seed');
-    const cookies = (html.headers['set-cookie'] || []).map((s) => s.split(';', 2)[0]).join('; ');
-    if (!seed) {
-        throw new Error('Could not resolve seed. Will retry...')
-    }
-    
-    return {
-        seed,
-        cookies,
-    };
+    return parts.join('&');
 }
 
 // 5. FUNCTION TO INFORM ABOUT THE ITEM LIMIT
@@ -197,14 +180,14 @@ function notifyAboutMaxResults(foundProjects, limit) {
 const proxyConfiguration = async ({
     proxyConfig,
     required = true,
-    force = Apify.isAtHome(),
+    force = Actor.isAtHome(),
     blacklist = ['GOOGLESERP'],
     hint = [],
 }) => {
-    const configuration = await Apify.createProxyConfiguration(proxyConfig);
+    const configuration = await Actor.createProxyConfiguration(proxyConfig);
 
     // this works for custom proxyUrls
-    if (Apify.isAtHome() && required) {
+    if (Actor.isAtHome() && required) {
         if (!configuration || (!configuration.usesApifyProxy && (!configuration.proxyUrls || !configuration.proxyUrls.length)) || !configuration.newUrl()) {
             throw new Error('\n=======\nYou must use Apify proxy or custom proxy URLs\n\n=======');
         }
@@ -220,7 +203,7 @@ const proxyConfiguration = async ({
 
             // specific non-automatic proxy groups like RESIDENTIAL, not an error, just a hint
             if (hint.length && !hint.some((group) => (configuration.groups || []).includes(group))) {
-                Apify.utils.log.info(`\n=======\nYou can pick specific proxy groups for better experience:\n\n*  ${hint.join('\n*  ')}\n\n=======`);
+                log.info(`\n=======\nYou can pick specific proxy groups for better experience:\n\n*  ${hint.join('\n*  ')}\n\n=======`);
             }
         }
     }
@@ -231,7 +214,7 @@ const proxyConfiguration = async ({
 module.exports = {
     cleanProject,
     parseInput,
-    getToken,
     notifyAboutMaxResults,
     proxyConfiguration,
+    stringifyQuery,
 };
