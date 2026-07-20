@@ -20,11 +20,12 @@
       "category": {
           "sectionCaption": "Possible filters",
           "title": "Category",
-          "type": "string",
-          "description": "Category to search in",
-          "prefill": "All",
-          "enum": [
-              "All",
+          "type": "array",
+          "description": "Category/categories to search in. Leave empty to include all categories.",
+          "default": [],
+          "items": {
+              "type": "string",
+              "enum": [
               "art",
               "art/ceramics",
               "art/conceptual art",
@@ -194,7 +195,8 @@
               "theater/musical",
               "theater/plays",
               "theater/spaces"
-          ],
+              ]
+          },
           "editor": "select"
       },
       "location": {
