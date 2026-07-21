@@ -81,28 +81,26 @@ async function parseInput(input) {
 
     // process category
     if (filledInFilters.category) {
-        const fromInputLowerCase = filledInFilters.category.toLowerCase();
-        const foundCategories = categories.filter((category) => {
-            return fromInputLowerCase.category === category.id || fromInputLowerCase === category.slug.toLowerCase();
-        });
+        const categoryIdBySlug = new Map(categories.map((category) => [category.slug.toLowerCase(), category.id]));
 
-        if (!foundCategories.length) {
-            log.warning(`Input parameter "category" contains invalid value: "${filledInFilters.category}".\n
+        const invalidCategories = filledInFilters.category.filter((categorySlug) => !categoryIdBySlug.has(categorySlug.toLowerCase()));
+        if (invalidCategories.length) {
+            log.warning(`Input parameter "category" contains invalid value(s): "${invalidCategories.join('", "')}".\n
             Please check the input. Actor will be stopped`);
             return;
         }
-        queryParams.category_id = [foundCategories[0].id];
+        queryParams.category_id = filledInFilters.category.map((categorySlug) => categoryIdBySlug.get(categorySlug.toLowerCase()));
     }
 
     // process status
     if (filledInFilters.status) {
-        const selectedStates = filledInFilters.status.map((status) => statuses[status]);
-        if (selectedStates.includes(undefined)) {
-            log.warning(`Input parameter "status" contains invalid value: "${filledInFilters.status}".\n
+        const invalidStatuses = filledInFilters.status.filter((status) => !(status in statuses));
+        if (invalidStatuses.length) {
+            log.warning(`Input parameter "status" contains invalid value(s): "${invalidStatuses.join('", "')}".\n
             Please check the input. Actor will be stopped.`);
             return;
         }
-        queryParams.state = selectedStates;
+        queryParams.state = filledInFilters.status.map((status) => statuses[status]);
     } else {
         // Kickstarter now requires every state to be listed explicitly to mean "All"
         queryParams.state = states;

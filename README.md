@@ -40,7 +40,7 @@ Input of this actor should be JSON containing filter specification. Allowed filt
 | **Field** | **Description** | **Allowed values** |
 |--|--|--|
 |  **query**| Search term | Any string value, e.g. *Nimbus 2000 project*  |
-| **category** | Category to search in | Category slug from  [this list](https://github.com/gippy/kickstarter-search/blob/master/categories.json) - anything from *books* to *community gardens* |
+| **category** | Category/categories to search in | Array of category slugs from  [this list](https://github.com/gippy/kickstarter-search/blob/master/categories.json) - anything from *books* to *community gardens*. Leave empty for all categories |
 |  **location**| Location to search around | Name of the location, e.g. *Prague* |
 |  **status**| Status(es) of the project | Array with any of: *Upcoming, Live, Late Pledge, Canceled, Failed, Successful*. Leave empty for all statuses |
 |  **pledgedMin**| Minimum amount pledged | Any non-negative number, e.g. *100* |
@@ -58,7 +58,7 @@ Input of this actor should be JSON containing filter specification. Allowed filt
 {
     "query":  "Board games",  "
     maxResults":  100,  
-    "category":  "games",  
+    "category":  ["games"],  
     "location":  "United States",  
     "sort":  "newest",  "proxyConfig":  
     {  "useApifyProxy":  true  },  
