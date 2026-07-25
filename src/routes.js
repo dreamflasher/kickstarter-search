@@ -67,9 +67,13 @@ exports.handlePagination = async ({ request, page: browserPage }, requestQueue) 
     }
 
     // Kickstarter can keep reporting has_more=true even though it has no more new projects left to give
-    // (e.g. once near the end of the result set). Track consecutive short pages and give up after a few.
+    // (e.g. once near the end of the result set). Track consecutive short pages and give up after a few,
+    // but only act on the streak once we're actually near the end - short pages earlier on are usually
+    // just duplicates, not a sign that Kickstarter has run out of projects.
     incompletePagesStreak = newProjectsCount >= PROJECTS_PER_PAGE ? 0 : incompletePagesStreak + 1;
-    if (incompletePagesStreak >= MAX_INCOMPLETE_PAGES_STREAK) {
+    const lastPage = Math.ceil(totalProjects / PROJECTS_PER_PAGE);
+    const isNearLastPage = page >= lastPage - 1;
+    if (isNearLastPage && incompletePagesStreak >= MAX_INCOMPLETE_PAGES_STREAK) {
         log.info(`Page ${page}: Stopping pagination, ${incompletePagesStreak} consecutive pages without a full page of new projects.`);
         return;
     }
