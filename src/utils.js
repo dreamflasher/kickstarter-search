@@ -22,8 +22,7 @@ function cleanProject(project) {
         rewardsUrl: project.urls?.web?.rewards ?? null,
         featureImage: project.profile?.feature_image_attributes?.image_urls?.default ?? null,
         title: project.name,
-        description: project.blurb,
-        link: project.urls?.web?.project ?? null
+        description: project.blurb
     };
 
     delete cleanedProject.creator;
